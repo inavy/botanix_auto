@@ -8,6 +8,7 @@ import requests
 from datetime import datetime
 from dateutil import tz
 from datetime import timezone
+from datetime import timedelta
 import socket
 import time
 import re
@@ -44,6 +45,51 @@ def conv_time(ts, style=1):
     # local = dt.astimezone(to_zone)
     local = dt.replace(tzinfo=timezone.utc).astimezone(to_zone)
     s_date = local.strftime(t_format)
+    return s_date
+
+
+def format_ts(ts, style=1, tz_offset=0):
+    """
+    ts: second
+    style:
+        1: 2022-10-20
+        2: 2022-10-20T20:51:11+0800
+        3: 2022-10-20 00:00:00
+        4: 20:51
+        5: 2022-10-20 20:51:11
+    tz_offset:
+        timezone offset in hours from UTC
+        e.g., 0 for UTC, 8 for Asia/Shanghai
+    """
+    if style == 1:
+        t_format = "%Y-%m-%d"
+    elif style == 2:
+        t_format = "%Y-%m-%dT%H:%M:%S"
+    elif style == 3:
+        t_format = "%Y-%m-%d 00:00:00"
+    elif style == 4:
+        t_format = "%H:%M"
+    elif style == 5:
+        t_format = "%Y-%m-%d %H:%M:%S"
+    else:
+        print("conv_time parameter is error.")
+        sys.exit(1)
+    # Convert timestamp to datetime object in UTC
+    dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+
+    # Calculate the target timezone
+    to_zone = timezone(timedelta(hours=tz_offset))
+
+    # Convert to target timezone
+    local = dt.astimezone(to_zone)
+
+    # Format the datetime object to the specified style
+    s_date = local.strftime(t_format)
+
+    # Append the timezone offset to the formatted string if style is 2
+    if style == 2:
+        s_date += f"{tz_offset:+03d}00"
+
     return s_date
 
 

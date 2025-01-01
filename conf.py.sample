@@ -35,6 +35,11 @@ DEF_MINT_USDC_MAX = 2
 DEF_MINT_WBTC_MIN = 1
 DEF_MINT_WBTC_MAX = 3
 
+# 设置时间的时区 (0 for UTC, 8 for Asia/Shanghai)
+TZ_OFFSET = 0
+# 清空浏览器目录
+DEL_PROFILE_DIR = False
+
 FILENAME_LOG = 'run.log'
 
 # Chrome 插件所在的目录

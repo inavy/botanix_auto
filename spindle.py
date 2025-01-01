@@ -20,7 +20,7 @@ from fun_utils import ding_msg
 from fun_utils import get_date
 from fun_utils import load_file
 from fun_utils import save2file
-from fun_utils import conv_time
+from fun_utils import format_ts
 # from fun_utils import time_difference
 from fun_utils import extract_numbers
 
@@ -47,6 +47,9 @@ from conf import DEF_MINT_WBTC_MAX
 
 from conf import DEF_PATH_DATA_PURSE
 from conf import DEF_HEADER_PURSE
+
+from conf import TZ_OFFSET
+from conf import DEL_PROFILE_DIR
 
 from conf import logger
 
@@ -215,9 +218,25 @@ class SpindleTask():
                     return True
         return False
 
-    def check_start_tabs(self, s_keep='新标签页'):
-        # 关闭多余的标签页
-        if len(self.page.tab_ids) > 1:
+    def is_exist(self, s_title, s_find, match_type):
+        b_ret = False
+        if match_type == 'fuzzy':
+            if s_title.find(s_find) >= 0:
+                b_ret = True
+        else:
+            if s_title == s_find:
+                b_ret = True
+
+        return b_ret
+
+    def check_start_tabs(self, s_keep='新标签页', match_type='fuzzy'):
+        """
+        关闭多余的标签页
+        match_type
+            precise 精确匹配
+            fuzzy 模糊匹配
+        """
+        if self.page.tabs_count > 1:
             self.logit('check_start_tabs', None)
             tab_ids = self.page.tab_ids
             n_tabs = len(tab_ids)
@@ -225,7 +244,7 @@ class SpindleTask():
                 tab_id = tab_ids[i]
                 s_title = self.page.get_tab(tab_id).title
                 # print(f's_title={s_title}')
-                if s_title.find(s_keep) >= 0:
+                if self.is_exist(s_title, s_keep, match_type):
                     continue
                 if len(self.page.tab_ids) == 1:
                     break
@@ -287,7 +306,9 @@ class SpindleTask():
         # self.page.wait.load_start()
         self.page.wait(3)
         self.close_popup_tabs()
-        self.check_start_tabs('OKX Wallet')
+        self.check_start_tabs('OKX Wallet', 'precise')
+
+        self.logit('init_okx', f'tabs_count={self.page.tabs_count}')
 
         self.save_screenshot(name='okx_1.jpg')
 
@@ -499,7 +520,7 @@ class SpindleTask():
     def update_status(self, update_ts=None):
         if not update_ts:
             update_ts = time.time()
-        update_time = conv_time(update_ts, 2)
+        update_time = format_ts(update_ts, 2, TZ_OFFSET)
         if self.args.s_profile in self.dic_status:
             self.dic_status[self.args.s_profile][1] = update_time
         else:
@@ -616,6 +637,8 @@ class SpindleTask():
             self.page.get('https://dev.app.spindlefinance.xyz/mint')
             # self.page.wait.load_start()
             self.page.wait(3)
+
+            self.logit('faucet_mint', f'tabs_count={self.page.tabs_count}')
 
             ele_info = self.page.ele('Terms of Services', timeout=2)
             if not isinstance(ele_info, NoneElement):
@@ -756,7 +779,7 @@ def main(args):
         logger.info(f'Sleep {args.sleep_sec_at_start} seconds at start !!!') # noqa
         time.sleep(args.sleep_sec_at_start)
 
-    if os.path.exists(DEF_PATH_USER_DATA):
+    if DEL_PROFILE_DIR and os.path.exists(DEF_PATH_USER_DATA):
         logger.info(f'Delete {DEF_PATH_USER_DATA} ...')
         shutil.rmtree(DEF_PATH_USER_DATA)
         logger.info(f'Directory {DEF_PATH_USER_DATA} is deleted') # noqa
@@ -786,7 +809,7 @@ def main(args):
 
         args.s_profile = s_profile
 
-        if not s_profile in instSpindleTask.dic_purse:
+        if s_profile not in instSpindleTask.dic_purse:
             logger.info(f'{s_profile} is not in purse conf [ERROR]')
             sys.exit(0)
 
@@ -819,7 +842,7 @@ def main(args):
                 if lst_status:
                     avail_time = lst_status[1]
                     if avail_time:
-                        date_now = conv_time(time.time(), style=1)
+                        date_now = format_ts(time.time(), style=1, tz_offset=TZ_OFFSET) # noqa
                         date_account = avail_time[:10]
                         if date_now == date_account:
                             logger.info(f'[{s_profile}] Last update at {avail_time}') # noqa
