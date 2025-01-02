@@ -6,6 +6,7 @@ import time
 import copy
 import pdb # noqa
 import shutil
+import math
 # from datetime import datetime
 
 from DrissionPage import ChromiumOptions
@@ -153,6 +154,15 @@ class SpindleTask():
 
         # 阻止“要恢复页面吗？Chrome未正确关闭”的提示气泡
         co.set_argument('--hide-crash-restore-bubble')
+
+        # 关闭沙盒模式
+        # co.set_argument('--no-sandbox')
+
+        # popups支持的取值
+        # 0：允许所有弹窗
+        # 1：只允许由用户操作触发的弹窗
+        # 2：禁止所有弹窗
+        # co.set_pref(arg='profile.default_content_settings.popups', value='0')
 
         co.set_user_data_path(path=DEF_PATH_USER_DATA)
         co.set_user(user=profile_path)
@@ -347,12 +357,17 @@ class SpindleTask():
                     self.logit('init_okx', 'Import By Seed phrase')
                     words = s_key.split()
 
+                    # 输入助记词需要最大化窗口，否则最后几个单词可能无法输入
+                    self.page.set.window.max()
+
                     ele_inputs = self.page.eles('.mnemonic-words-inputs__container__input', timeout=2) # noqa
                     if not isinstance(ele_inputs, NoneElement):
                         self.logit('init_okx', 'Input Seed phrase')
                         for i in range(len(ele_inputs)):
                             ele_input = ele_inputs[i]
                             self.page.actions.move_to(ele_input).click().type(words[i]) # noqa
+                            self.logit(None, f'Input word [{i+1}/{len(words)}]') # noqa
+                            self.page.wait(1)
 
                 # Confirm
                 max_wait_sec = 10
@@ -373,6 +388,7 @@ class SpindleTask():
                                 self.logit(None, 'Confirm Button is_clickable=False') # noqa
 
                     i += 1
+                    self.page.wait(1)
                 # 未点击 Confirm
                 if i >= max_wait_sec:
                     self.logit('init_okx', 'Confirm Button is not found [ERROR]') # noqa
@@ -395,11 +411,12 @@ class SpindleTask():
 
                 # Start your Web3 journey
                 self.page.wait(1)
+                self.save_screenshot(name='okx_2.jpg')
                 ele_btn = self.page.ele('@@tag()=button@@data-testid=okd-button@@text():Start', timeout=2) # noqa
                 if not isinstance(ele_btn, NoneElement):
                     ele_btn.click(by_js=True)
                     self.logit('init_okx', 'import wallet success')
-                    self.save_screenshot(name='okx_2.jpg')
+                    self.save_screenshot(name='okx_3.jpg')
 
                 if is_success:
                     return True
@@ -665,6 +682,7 @@ class SpindleTask():
                     self.page.wait(1)
 
                     # OKX Wallet Connect
+                    self.save_screenshot(name='page_wallet_connect.jpg')
                     if len(self.page.tab_ids) == 2:
                         tab_id = self.page.latest_tab
                         tab_new = self.page.get_tab(tab_id)
@@ -800,11 +818,33 @@ def main(args):
 
     lst_success = []
 
+    # 将已完成的剔除掉
+    instSpindleTask.status_load()
+    # 从后向前遍历列表的索引
+    for i in range(len(profiles) - 1, -1, -1):
+        s_profile = profiles[i]
+        if s_profile in instSpindleTask.dic_status:
+            lst_status = instSpindleTask.dic_status[s_profile]
+            if lst_status:
+                avail_time = lst_status[1]
+                if avail_time:
+                    date_now = format_ts(time.time(), style=1, tz_offset=TZ_OFFSET) # noqa
+                    date_account = avail_time[:10]
+                    if date_now == date_account:
+                        n += 1
+                        profiles.pop(i)
+        else:
+            continue
+    logger.info('#'*40)
+    percent = math.floor((n / total) * 100)
+    logger.info(f'Progress: {percent}% [{n}/{total}]') # noqa
+
     while profiles:
         n += 1
         logger.info('#'*40)
         s_profile = random.choice(profiles)
-        logger.info(f'progress:{n}/{total} [{s_profile}]') # noqa
+        percent = math.floor((n / total) * 100)
+        logger.info(f'Progress: {percent}% [{n}/{total}] [{s_profile}]') # noqa
         profiles.remove(s_profile)
 
         args.s_profile = s_profile
