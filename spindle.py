@@ -7,6 +7,7 @@ import copy
 import pdb # noqa
 import shutil
 import math
+import re
 # from datetime import datetime
 
 from DrissionPage import ChromiumOptions
@@ -58,6 +59,11 @@ from conf import logger
 2024.12.23
 https://dev.app.spindlefinance.xyz/mint
 """
+
+# Wallet balance
+DEF_INSUFFICIENT = -1
+DEF_SUCCESS = 0
+DEF_FAIL = 1
 
 
 class SpindleTask():
@@ -322,6 +328,12 @@ class SpindleTask():
 
         self.save_screenshot(name='okx_1.jpg')
 
+        ele_info = self.page.ele('@@tag()=div@@class:balance', timeout=2) # noqa
+        if not isinstance(ele_info, NoneElement):
+            s_info = ele_info.text
+            self.logit('init_okx', f'Account balance: {s_info}') # noqa
+            return True
+
         ele_btn = self.page.ele('Import wallet', timeout=2)
         if not isinstance(ele_btn, NoneElement):
             # Import wallet
@@ -484,14 +496,14 @@ class SpindleTask():
                 tab_id = self.page.latest_tab
                 tab_new = self.page.get_tab(tab_id)
 
-                for i in range(max_wait_sec):
+                for j in range(max_wait_sec):
                     ele_btn = tab_new.ele('@@tag()=div@@text()=Est Botanix Testnet network fee', timeout=2) # noqa
                     self.logit(None, f'{i}/{max_wait_sec} Modify network fee ...') # noqa
                     if not isinstance(ele_btn, NoneElement):
                         ele_btn.click(by_js=True)
                         break
                     self.page.wait(1)
-                if i >= max_wait_sec:
+                if j >= max_wait_sec:
                     self.logit(None, f'{i}/{max_wait_sec} Modify network fee Failed') # noqa
                     continue
 
@@ -628,6 +640,9 @@ class SpindleTask():
                                 self.logit(None, f'Close Toast ({s_info})') # noqa
                                 self.save_screenshot(name=f'mint_{coin}_003.jpg') # noqa
 
+                            if s_info == 'Transaction failed':
+                                return False
+
                             # Transaction successful
                             # Unknown error occurred
                             # 两种情况，都是提交成功，交易处于 Pending ，提示是 Unknown error occurred # noqa
@@ -642,11 +657,167 @@ class SpindleTask():
                     return False
         return False
 
-    def faucet_mint(self):
+
+    def spindle_lend(self, coin):
         """
+        coin:
+            USDC
+            WBTC
+        """
+
+        def select_ammount(ammount='Max'):
+            """
+            ammount:
+                Max
+                50%
+            """
+            ele_btn = self.page.ele(f'@@tag()=button@@text()={ammount}', timeout=2) # noqa
+            if not isinstance(ele_btn, NoneElement):
+                ele_btn.click(by_js=True)
+                self.logit(None, f'Click {ammount} Button') # noqa
+                self.page.wait(1)
+                return True
+            return False
+
+        def click_button(button_info):
+            """
+            button_info:
+                Approve
+                Lend
+            """
+            max_wait_sec = 10
+            i = 1
+            while i < max_wait_sec:
+                ele_btn = self.page.ele(f'@@tag()=button@@text()={button_info}', timeout=2) # noqa
+                self.logit(None, f'To {button_info} ... {i}/{max_wait_sec}') # noqa
+                if not isinstance(ele_btn, NoneElement):
+                    if ele_btn.states.is_enabled is False:
+                        self.logit(None, f'{button_info} Button is_enabled=False')
+                    else:
+                        if ele_btn.states.is_clickable:
+                            ele_btn.click(by_js=True)
+                            self.logit(None, f'{button_info} Button is clicked') # noqa
+                            self.page.wait(1)
+
+
+                            # 确认是否有待取消的交易
+                            # self.logit(None, '##### okx_cancel ...') # noqa
+                            self.okx_cancel()
+
+                            # OKX Wallet Confirm
+                            self.logit(None, '##### okx_confirm ...') # noqa
+                            self.okx_confirm()
+
+                            n_wait_sec = 20
+                            i = 1
+                            while i < n_wait_sec:
+                                ele_info = self.page.ele('@@tag()=div@@class=text-sm font-semibold', timeout=2) # noqa
+                                if not isinstance(ele_info, NoneElement):
+                                    s_info = ele_info.text
+                                    self.logit(None, f'----- Status: {s_info} [{i}/{max_wait_sec}]') # noqa
+                                    if s_info == 'Transaction in progress':
+                                        self.page.wait(1)
+                                    else:
+                                        ele_btn = self.page.ele('@@tag()=button@@class:absolute', timeout=2) # noqa
+                                        if not isinstance(ele_btn, NoneElement):
+                                            ele_btn.click(by_js=True)
+                                            self.logit(None, f'Close Toast ({s_info})') # noqa
+
+                                        if s_info == 'Transaction failed':
+                                            return False
+
+                                        # Transaction successful
+                                        # Unknown error occurred
+                                        # 两种情况，都是提交成功，交易处于 Pending ，提示是 Unknown error occurred # noqa
+                                        return True
+                                else:
+                                    self.logit(None, f'----- Get Transaction result ... [{i}/{max_wait_sec}]') # noqa
+
+                                i += 1
+                            if i >= n_wait_sec:
+                                self.logit('spindle_lend', f'Transaction failed, took {i} seconds.') # noqa
+                                return False
+                            break
+                        else:
+                            self.logit(None, 'Confirm Button is_clickable=False') # noqa
+
+                i += 1
+                self.page.wait(1)
+            # 未点击 Confirm
+            if i >= max_wait_sec:
+                self.logit('spindle_lend', 'Confirm Button is not found [ERROR]') # noqa
+
+            return False
+
+
+        for i in range(1, DEF_NUM_TRY):
+            self.logit('spindle_lend', f'try_i={i}/{DEF_NUM_TRY}')
+
+            if self.init_okx() is False:
+                continue
+
+            s_url = 'https://dev.app.spindlefinance.xyz/lend'
+            self.page.get(s_url)
+            self.page.wait(3)
+            self.logit('spindle_lend', s_url)
+
+            self.logit('spindle_lend', f'tabs_count={self.page.tabs_count}')
+
+            ele_btn = self.page.ele(f'@@tag()=div@@text()={coin}', timeout=2) # noqa
+            if not isinstance(ele_btn, NoneElement):
+                ele_btn.click(by_js=True)
+                self.logit(None, f'Lend ({coin})') # noqa
+                self.page.wait(2)
+
+            ele_info = self.page.ele('@@tag()=div@@class=flex items-center justify-between text-muted-foreground@@text():Wallet balance', timeout=2) # noqa
+            if not isinstance(ele_info, NoneElement):
+                s_info = ele_info.text.replace('\n', ' ')
+                self.logit(None, f's_info: {s_info}') # noqa
+                # 使用正则表达式提取数字
+                match = re.search(r'(\d+\.\d+)', s_info)
+                if match:
+                    balance = match.group(1)
+                    try:
+                        balance = float(balance)
+                    except: # noqa
+                        balance = 0
+                    if balance <= 0.0000001:
+                        # 余额不足
+                        return DEF_INSUFFICIENT
+                else:
+                    self.logit(None, 'Fail to get wallet balance') # noqa
+                    continue
+
+            # Click MAX Button / 50% Button
+            if not select_ammount('Max'):
+                continue
+
+            # Click Approve Button
+            click_button('Approve')
+
+            if not select_ammount('50%'):
+                continue
+            if not select_ammount('Max'):
+                continue
+
+            # Click Lend Button
+            if click_button('Lend'):
+                self.update_status()
+                return DEF_SUCCESS
+        return DEF_FAIL
+
+
+
+
+    def spindle_mint(self, coin=None):
+        """
+        coin:
+            USDC: only mint USDC
+            WBTC: only mint WBTC
+            Default: Mint USDC and WBTC
         """
         for i in range(1, DEF_NUM_TRY):
-            self.logit('faucet_mint', f'Faucet Summit try_i={i}/{DEF_NUM_TRY}')
+            self.logit('spindle_mint', f'Faucet Summit try_i={i}/{DEF_NUM_TRY}')
 
             if self.init_okx() is False:
                 continue
@@ -655,11 +826,11 @@ class SpindleTask():
             # self.page.wait.load_start()
             self.page.wait(3)
 
-            self.logit('faucet_mint', f'tabs_count={self.page.tabs_count}')
+            self.logit('spindle_mint', f'tabs_count={self.page.tabs_count}')
 
             ele_info = self.page.ele('Terms of Services', timeout=2)
             if not isinstance(ele_info, NoneElement):
-                self.logit('faucet_mint', 'Terms of Services [Select]') # noqa
+                self.logit('spindle_mint', 'Terms of Services [Select]') # noqa
                 ele_btn = self.page.ele('@@tag()=button@@role=checkbox', timeout=2) # noqa
                 if not isinstance(ele_btn, NoneElement):
                     ele_btn.click(by_js=True)
@@ -673,7 +844,7 @@ class SpindleTask():
             # 钱包未连接
             ele_btn = self.page.ele('@@tag()=button@@text()=Connect Wallet', timeout=2) # noqa
             if not isinstance(ele_btn, NoneElement):
-                self.logit('faucet_mint', 'Need to Connect Wallet ...') # noqa
+                self.logit('spindle_mint', 'Need to Connect Wallet ...') # noqa
                 ele_btn.click(by_js=True)
                 self.page.wait(1)
                 ele_btn = self.page.ele('@@tag()=div@@class:iekbcc0 ju367v4@@text()=OKX Wallet', timeout=2) # noqa
@@ -703,12 +874,12 @@ class SpindleTask():
             # Wrong network
             ele_btn = self.page.ele('@@tag()=button@@text()=Wrong network', timeout=2) # noqa
             if not isinstance(ele_btn, NoneElement):
-                self.logit('faucet_mint', 'Wrong network ...')
+                self.logit('spindle_mint', 'Wrong network ...')
                 ele_btn.click(by_js=True)
                 self.page.wait(1)
                 ele_btn = self.page.ele('@@tag()=button@@text()=Botanix Testnet', timeout=2) # noqa
                 if not isinstance(ele_btn, NoneElement):
-                    self.logit('faucet_mint', 'Select Botanix Testnet ...')
+                    self.logit('spindle_mint', 'Select Botanix Testnet ...')
                     ele_btn.click(by_js=True)
                     self.page.wait(1)
 
@@ -719,33 +890,46 @@ class SpindleTask():
                         ele_btn = tab_new.ele('@@tag()=button@@data-testid=okd-button@@text()=Approve', timeout=2) # noqa
                         if not isinstance(ele_btn, NoneElement):
                             ele_btn.click(by_js=True)
-                            self.logit('faucet_mint', 'Approve Botanix Testnet ...') # noqa
+                            self.logit('spindle_mint', 'Approve Botanix Testnet ...') # noqa
                             self.page.wait(1)
 
             # 钱包已连接
             ele_btn = self.page.ele('@@tag()=button@@class:inline-flex items-center@@text():…', timeout=2) # noqa
             if not isinstance(ele_btn, NoneElement):
-                self.logit('faucet_mint', 'Wallet is connected')
+                self.logit('spindle_mint', 'Wallet is connected')
             else:
-                self.logit('faucet_mint', 'Wallet is failed to connected [ERROR]') # noqa
+                self.logit('spindle_mint', 'Wallet is failed to connected [ERROR]') # noqa
                 continue
+            
+            if coin is None:
+                is_success = False
+                n_mint = random.randint(DEF_MINT_USDC_MIN, DEF_MINT_USDC_MAX)
+                for i in range(n_mint):
+                    self.logit('spindle_mint', f'*** Mint USDC {i+1}/{n_mint}')
+                    ret = self.testnet_mint('USDC')
+                    is_success = is_success or ret
 
-            is_success = False
-            n_mint = random.randint(DEF_MINT_USDC_MIN, DEF_MINT_USDC_MAX)
-            for i in range(n_mint):
-                self.logit('faucet_mint', f'*** Mint USDC {i+1}/{n_mint}')
-                ret = self.testnet_mint('USDC')
-                is_success = is_success or ret
+                n_mint = random.randint(DEF_MINT_WBTC_MIN, DEF_MINT_WBTC_MAX)
+                for i in range(n_mint):
+                    self.logit('spindle_mint', f'*** Mint WBTC {i+1}/{n_mint}')
+                    ret = self.testnet_mint('WBTC')
+                    is_success = is_success or ret
+            else:
+                if coin == 'USDC':
+                    n_mint = random.randint(DEF_MINT_USDC_MIN, DEF_MINT_USDC_MAX)
+                elif coin == 'WBTC':
+                    n_mint = random.randint(DEF_MINT_WBTC_MIN, DEF_MINT_WBTC_MAX)
+                else:
+                    self.logit('spindle_mint', f'Not Support! coin={coin} Error!')
+                    sys.exit(1)
 
-            n_mint = random.randint(DEF_MINT_WBTC_MIN, DEF_MINT_WBTC_MAX)
-            for i in range(n_mint):
-                self.logit('faucet_mint', f'*** Mint WBTC {i+1}/{n_mint}')
-                ret = self.testnet_mint('WBTC')
-                is_success = is_success or ret
+                for i in range(n_mint):
+                    self.logit('spindle_mint', f'*** Mint {coin} {i+1}/{n_mint}')
+                    is_success = self.testnet_mint(coin)
 
             if is_success:
                 logger.info('Mint success!')
-                self.logit('faucet_mint', 'Mint success!')
+                self.logit('spindle_mint', 'Mint success!')
                 return True
 
             # logger.info(f'Submit failed, took {i} seconds.')
@@ -762,9 +946,34 @@ class SpindleTask():
             # ding_msg(d_cont, DEF_DING_TOKEN, msgtype="markdown")
             # continue
 
-        self.logit('faucet_mint', 'Mint failed!')
+        self.logit('spindle_mint', 'Mint failed!')
         self.close()
         return False
+
+    def spindle_run(self):
+
+        n_raffle = random.randint(1, 5)
+        # n_raffle = 2
+        self.logit('spindle_run', f'n_raffle={n_raffle}')
+
+        if n_raffle == 1:
+            if self.spindle_lend('USDC') != DEF_SUCCESS:
+                self.spindle_mint('USDC')
+        elif n_raffle == 2:
+            if self.spindle_lend('WBTC') != DEF_SUCCESS:
+                self.spindle_mint('WBTC')
+        elif n_raffle == 3:
+            self.spindle_mint('USDC')
+        elif n_raffle == 4:
+            self.spindle_mint('WBTC')
+        elif n_raffle == 5:
+            self.spindle_mint()
+        else:
+            self.logit('spindle_run', f'n_raffle={n_raffle} is error !')
+            sys.exit(1)
+
+        return True
+
 
 
 def send_msg(instSpindleTask, lst_success):
@@ -854,11 +1063,17 @@ def main(args):
             sys.exit(0)
 
         def _run():
+            s_directory = f'{DEF_PATH_USER_DATA}/{args.s_profile}'
+            if os.path.exists(s_directory) and os.path.isdir(s_directory):
+                pass
+            else:
+                # Create new profile
+                instSpindleTask.initChrome(args.s_profile)
+                instSpindleTask.init_okx()
+                instSpindleTask.close()
+
             instSpindleTask.initChrome(args.s_profile)
-            instSpindleTask.init_okx()
-            instSpindleTask.close()
-            instSpindleTask.initChrome(args.s_profile)
-            is_claim = instSpindleTask.faucet_mint()
+            is_claim = instSpindleTask.spindle_run()
             return is_claim
 
         # 如果出现异常(与页面的连接已断开)，增加重试
