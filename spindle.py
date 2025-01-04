@@ -905,7 +905,7 @@ def main(args):
         if instSpindleTask.is_update is False:
             continue
 
-        logger.info(f'[{s_profile}] Finish')
+        logger.info(f'Progress: {percent}% [{n}/{total}] [{s_profile} Finish]')
 
         if len(items) > 0:
             sleep_time = random.randint(args.sleep_sec_min, args.sleep_sec_max)

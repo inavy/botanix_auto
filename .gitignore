@@ -5,5 +5,4 @@ conf.py
 datas
 .DS_Store
 chrome_profile
-extensions
 tmp_img
