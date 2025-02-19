@@ -130,7 +130,8 @@ class SpindleTask():
         if DEF_USE_HEADLESS is False and DEF_DEBUG:
             pass
         else:
-            self.page.quit()
+            if self.page:
+                self.page.quit()
 
     def initChrome(self, s_profile):
         """
@@ -449,12 +450,15 @@ class SpindleTask():
                         self.save_screenshot(name='okx_2.jpg')
 
                         return True
+            else:
+                self.logit('init_okx', 'What is this ...')
 
         self.logit('init_okx', 'login failed [ERROR]')
         return False
 
     def okx_confirm(self):
         # OKX Wallet Confirm
+        max_retry = 5
         max_wait_sec = 15
         self.logit('okx_confirm', None) # noqa
         # pdb.set_trace()
@@ -468,8 +472,10 @@ class SpindleTask():
                 DEF_FEE_MAX_BASE
                 DEF_FEE_PRIORITY
             """
-            i = 1
+            self.logit('set_fee', s_info_fee) # noqa
+            i = 0
             while i < max_wait_sec:
+                i += 1
                 s_path = f'@@tag()=div@@class=okui-input okui-input-md@@text()={s_info_fee}' # noqa
                 ele_block = tab_new.ele(s_path, timeout=2)
                 if not isinstance(ele_block, NoneElement):
@@ -487,28 +493,35 @@ class SpindleTask():
                         if ele_input.value == val_fee:
                             self.logit(None, f'{s_info_fee} fee={ele_input.value} Modify Success') # noqa
                         return True
+                else:
+                    if self.cancel_estimation_unsuccess(tab_new):
+                        return False
                 self.page.wait(1)
             return False
 
-        i = 1
-        while i < max_wait_sec:
+        i = 0
+        while i < max_retry:
+            i += 1
             if len(self.page.tab_ids) == 2:
                 tab_id = self.page.latest_tab
                 tab_new = self.page.get_tab(tab_id)
 
                 for j in range(max_wait_sec):
                     ele_btn = tab_new.ele('@@tag()=div@@text()=Est Botanix Testnet network fee', timeout=2) # noqa
-                    self.logit(None, f'{i}/{max_wait_sec} Modify network fee ...') # noqa
+                    self.logit(None, f'{j}/{max_wait_sec} Modify network fee ...') # noqa
                     if not isinstance(ele_btn, NoneElement):
                         ele_btn.click(by_js=True)
+                        self.logit(None, f'{j}/{max_wait_sec} Modify network fee [Clicked]') # noqa
                         break
                     self.page.wait(1)
                 if j >= max_wait_sec:
-                    self.logit(None, f'{i}/{max_wait_sec} Modify network fee Failed') # noqa
+                    self.logit(None, f'{j}/{max_wait_sec} Modify network fee Failed') # noqa
                     continue
 
-                set_fee(tab_new, 'Max base fee', DEF_FEE_MAX_BASE)
-                set_fee(tab_new, 'Priority fee', DEF_FEE_PRIORITY)
+                if not set_fee(tab_new, 'Max base fee', DEF_FEE_MAX_BASE):
+                    continue
+                if not set_fee(tab_new, 'Priority fee', DEF_FEE_PRIORITY):
+                    continue
 
                 # Save these values as default for Botanix Testnet
                 ele_chkbox = tab_new.ele('@@tag()=input@@type=checkbox@@class=okui-checkbox-input', timeout=2) # noqa
@@ -561,14 +574,17 @@ class SpindleTask():
         self.is_update = True
 
     def okx_cancel(self):
+        max_retry = 5
         max_wait_sec = 30
-        i = 1
-        while i < max_wait_sec:
+        i = 0
+        while i < max_retry:
+            i += 1
             if len(self.page.tab_ids) == 2:
+                self.logit('okx_cancel', f'New popup window ... {i}/{max_wait_sec}') # noqa
                 tab_id = self.page.latest_tab
                 tab_new = self.page.get_tab(tab_id)
 
-                for i in range(max_wait_sec):
+                for j in range(max_wait_sec):
                     ele_btn = tab_new.ele('@@tag()=div@@text(): confirmations', timeout=2) # noqa
                     if not isinstance(ele_btn, NoneElement):
                         n_trans = extract_numbers(ele_btn.text)[1]
@@ -585,14 +601,27 @@ class SpindleTask():
                     else:
                         self.logit('okx_cancel', 'check confirmations [OK]') # noqa
                         return False
-                if i >= max_wait_sec:
-                    self.logit('okx_cancel', f'okx_cancel Failed [{i}/{max_wait_sec}]') # noqa
+                if j >= max_wait_sec:
+                    self.logit('okx_cancel', f'okx_cancel Failed [{j}/{max_wait_sec}]') # noqa
                     continue
                 # 有弹窗，就不再循环
                 break
             else:
+                self.logit('okx_cancel', f'Wait popup window ... {i}/{max_wait_sec}') # noqa
                 # 没有弹窗，重试
                 self.page.wait(1)
+        return False
+
+    def cancel_estimation_unsuccess(self, tab_new):
+        ele_info = tab_new.ele('Estimation unsuccessful', timeout=2)
+        if not isinstance(ele_info, NoneElement):
+            self.logit(None, 'Estimation unsuccessful ...')
+            ele_btn = tab_new.ele('@@tag()=button@@data-testid=okd-button@@text():Cancel', timeout=2) # noqa
+            if not isinstance(ele_btn, NoneElement):
+                ele_btn.click(by_js=True)
+                self.logit(None, f'Cancel unestimation transaction ...') # noqa
+                self.page.wait(1)
+                return True
         return False
 
     def testnet_mint(self, coin):
@@ -619,11 +648,14 @@ class SpindleTask():
 
                 # OKX Wallet Confirm
                 self.logit('testnet_mint', '##### okx_confirm ...') # noqa
-                self.okx_confirm()
+                if not self.okx_confirm():
+                    self.logit(None, 'transaction failed.') # noqa
+                    return False
 
                 max_wait_sec = 30
-                i = 1
+                i = 0
                 while i < max_wait_sec:
+                    i += 1
                     self.save_screenshot(name=f'mint_{coin}_001.jpg')
                     # ele_info = self.page.ele('@@tag()=div@@text()=Transaction successful', timeout=2) # noqa
                     ele_info = self.page.ele('@@tag()=div@@class=text-sm font-semibold', timeout=2) # noqa
@@ -651,12 +683,10 @@ class SpindleTask():
                     else:
                         self.logit(None, f'----- Get Transaction result ... [{i}/{max_wait_sec}]') # noqa
 
-                    i += 1
                 if i >= max_wait_sec:
                     self.logit('testnet_mint', f'Transaction failed, took {i} seconds.') # noqa
                     return False
         return False
-
 
     def spindle_lend(self, coin):
         """
@@ -685,20 +715,20 @@ class SpindleTask():
                 Approve
                 Lend
             """
-            max_wait_sec = 10
-            i = 1
-            while i < max_wait_sec:
+            max_retry = 5
+            i = 0
+            while i < max_retry:
+                i += 1
                 ele_btn = self.page.ele(f'@@tag()=button@@text()={button_info}', timeout=2) # noqa
-                self.logit(None, f'To {button_info} ... {i}/{max_wait_sec}') # noqa
+                self.logit(None, f'Ready To {button_info} ... {i}/{max_retry}') # noqa
                 if not isinstance(ele_btn, NoneElement):
                     if ele_btn.states.is_enabled is False:
-                        self.logit(None, f'{button_info} Button is_enabled=False')
+                        self.logit(None, f'{button_info} Button is_enabled=False') # noqa
                     else:
                         if ele_btn.states.is_clickable:
                             ele_btn.click(by_js=True)
                             self.logit(None, f'{button_info} Button is clicked') # noqa
                             self.page.wait(1)
-
 
                             # 确认是否有待取消的交易
                             # self.logit(None, '##### okx_cancel ...') # noqa
@@ -706,20 +736,23 @@ class SpindleTask():
 
                             # OKX Wallet Confirm
                             self.logit(None, '##### okx_confirm ...') # noqa
-                            self.okx_confirm()
+                            if not self.okx_confirm():
+                                self.logit(None, 'Transaction is failed.') # noqa
+                                continue
 
                             n_wait_sec = 20
-                            i = 1
-                            while i < n_wait_sec:
+                            j = 0
+                            while j < n_wait_sec:
+                                j += 1
                                 ele_info = self.page.ele('@@tag()=div@@class=text-sm font-semibold', timeout=2) # noqa
                                 if not isinstance(ele_info, NoneElement):
                                     s_info = ele_info.text
-                                    self.logit(None, f'----- Status: {s_info} [{i}/{max_wait_sec}]') # noqa
+                                    self.logit(None, f'----- Status: {s_info} [{j}/{n_wait_sec}]') # noqa
                                     if s_info == 'Transaction in progress':
                                         self.page.wait(1)
                                     else:
                                         ele_btn = self.page.ele('@@tag()=button@@class:absolute', timeout=2) # noqa
-                                        if not isinstance(ele_btn, NoneElement):
+                                        if not isinstance(ele_btn, NoneElement): # noqa
                                             ele_btn.click(by_js=True)
                                             self.logit(None, f'Close Toast ({s_info})') # noqa
 
@@ -731,20 +764,18 @@ class SpindleTask():
                                         # 两种情况，都是提交成功，交易处于 Pending ，提示是 Unknown error occurred # noqa
                                         return True
                                 else:
-                                    self.logit(None, f'----- Get Transaction result ... [{i}/{max_wait_sec}]') # noqa
+                                    self.logit(None, f'----- Get Transaction result ... [{j}/{n_wait_sec}]') # noqa
 
-                                i += 1
-                            if i >= n_wait_sec:
-                                self.logit('spindle_lend', f'Transaction failed, took {i} seconds.') # noqa
+                            if j >= n_wait_sec:
+                                self.logit('spindle_lend', f'Transaction failed, took {j} seconds.') # noqa
                                 return False
                             break
                         else:
                             self.logit(None, 'Confirm Button is_clickable=False') # noqa
 
-                i += 1
                 self.page.wait(1)
             # 未点击 Confirm
-            if i >= max_wait_sec:
+            if i >= max_retry:
                 self.logit('spindle_lend', 'Confirm Button is not found [ERROR]') # noqa
 
             return False
@@ -760,6 +791,8 @@ class SpindleTask():
             self.page.get(s_url)
             self.page.wait(3)
             self.logit('spindle_lend', s_url)
+
+            self.terms_accept()
 
             self.logit('spindle_lend', f'tabs_count={self.page.tabs_count}')
 
@@ -806,8 +839,19 @@ class SpindleTask():
                 return DEF_SUCCESS
         return DEF_FAIL
 
+    def terms_accept(self):
+        ele_info = self.page.ele('Terms of Services', timeout=2)
+        if not isinstance(ele_info, NoneElement):
+            self.logit('spindle_mint', 'Terms of Services [Select]') # noqa
+            ele_btn = self.page.ele('@@tag()=button@@role=checkbox', timeout=2) # noqa
+            if not isinstance(ele_btn, NoneElement):
+                ele_btn.click(by_js=True)
+                self.page.wait(1)
 
-
+                ele_btn = self.page.ele('@@tag()=button@@text()=Accept', timeout=2) # noqa
+                if not isinstance(ele_btn, NoneElement):
+                    ele_btn.click(by_js=True)
+                    self.page.wait(1)
 
     def spindle_mint(self, coin=None):
         """
@@ -828,18 +872,7 @@ class SpindleTask():
 
             self.logit('spindle_mint', f'tabs_count={self.page.tabs_count}')
 
-            ele_info = self.page.ele('Terms of Services', timeout=2)
-            if not isinstance(ele_info, NoneElement):
-                self.logit('spindle_mint', 'Terms of Services [Select]') # noqa
-                ele_btn = self.page.ele('@@tag()=button@@role=checkbox', timeout=2) # noqa
-                if not isinstance(ele_btn, NoneElement):
-                    ele_btn.click(by_js=True)
-                    self.page.wait(1)
-
-                    ele_btn = self.page.ele('@@tag()=button@@text()=Accept', timeout=2) # noqa
-                    if not isinstance(ele_btn, NoneElement):
-                        ele_btn.click(by_js=True)
-                        self.page.wait(1)
+            self.terms_accept()
 
             # 钱包未连接
             ele_btn = self.page.ele('@@tag()=button@@text()=Connect Wallet', timeout=2) # noqa
@@ -900,7 +933,7 @@ class SpindleTask():
             else:
                 self.logit('spindle_mint', 'Wallet is failed to connected [ERROR]') # noqa
                 continue
-            
+
             if coin is None:
                 is_success = False
                 n_mint = random.randint(DEF_MINT_USDC_MIN, DEF_MINT_USDC_MAX)
@@ -932,28 +965,92 @@ class SpindleTask():
                 self.logit('spindle_mint', 'Mint success!')
                 return True
 
-            # logger.info(f'Submit failed, took {i} seconds.')
-
-            # self.save_screenshot(name='s1_004.jpg')
-            # d_cont = {
-            #     'title': 'Faucet Submit Failed! [getbotanixfunds]',
-            #     'text': (
-            #         'Faucet Submit Failed [getbotanixfunds]\n'
-            #         '- {}\n'
-            #         .format(self.args.s_profile)
-            #     )
-            # }
-            # ding_msg(d_cont, DEF_DING_TOKEN, msgtype="markdown")
-            # continue
-
         self.logit('spindle_mint', 'Mint failed!')
         self.close()
         return False
 
+    def get_pending_num(self, s):
+        # 使用正则表达式匹配括号内的数字
+        match = re.search(r'\((\d+)\)', s)
+        if match:
+            # 如果匹配成功，提取数字并转换为整数
+            return int(match.group(1))
+        else:
+            # 如果未匹配到数字，返回-1
+            return -1
+
+    def is_tx_pending(self):
+        s_url = f'chrome-extension://{EXTENSION_ID_OKX}/home.html'
+        self.page.get(s_url)
+        # self.page.wait.load_start()
+        self.page.wait(3)
+
+        ele_btn = self.page.ele('@@tag()=div@@class=_container_1eikt_1', timeout=2) # noqa
+        if not isinstance(ele_btn, NoneElement):
+            ele_btn.click(by_js=True)
+            self.page.wait(1)
+
+        # Search network name
+        ele_input = self.page.ele('@@tag()=input@@data-testid=okd-input', timeout=2) # noqa
+        if not isinstance(ele_input, NoneElement):
+            self.logit('is_tx_exist', 'Change network to Botanix Testnet ...') # noqa
+            self.page.actions.move_to(ele_input).click().type('botanix')
+            self.page.wait(3)
+            ele_btn = self.page.ele('@@tag()=div@@class:_title@@text()=Botanix Testnet', timeout=2) # noqa
+            if not isinstance(ele_btn, NoneElement):
+                ele_btn.click(by_js=True)
+                self.page.wait(3)
+
+                # History
+                ele_blk = self.page.ele(f'@@tag()=div@@class:_iconWrapper_@@text()=History', timeout=2) # noqa
+                if not isinstance(ele_blk, NoneElement):
+                    self.logit(None, 'Click History ...') # noqa
+                    ele_btn = ele_blk.ele('@@tag()=div@@class:_wallet', timeout=2) # noqa
+                    if not isinstance(ele_btn, NoneElement):
+                        ele_btn.click(by_js=True)
+                        self.page.wait(2)
+
+                        # Pending 如果不是0，需要等待
+                        ele_info = self.page.ele('@@tag()=div@@class:tx-history__tabs-option@@text():Pending', timeout=2) # noqa
+                        if not isinstance(ele_info, NoneElement):
+                            s_info = ele_info.text
+                            self.logit(None, f'[History Pending] {s_info}')
+                            n_pending = self.get_pending_num(s_info)
+                            if n_pending > 0:
+                                n_sleep = 2
+                                self.logit(None, f'[WARNING] tx is Pending: {s_info} Sleep {n_sleep} seconds') # noqa
+                                self.page.wait(n_sleep)
+
+                                ele_btn = self.page.ele('@@tag()=i@@class:icon iconfont okx-wallet-plugin-brush@@role=button', timeout=2) # noqa
+                                if not isinstance(ele_btn, NoneElement):
+                                    ele_btn.click(by_js=True)
+                                    self.logit(None, 'Reset Nonce and clear pending transactions') # noqa
+                                    self.page.wait(1)
+                                    ele_btn = self.page.ele('@@tag()=button@@data-testid=okd-dialog-confirm-btn@@text()=Confirm', timeout=2) # noqa
+                                    if not isinstance(ele_btn, NoneElement):
+                                        ele_btn.click(by_js=True)
+                                        self.logit(None, 'Clear pending tx Confirmed [OK]')
+                                        return True
+                            else:
+                                self.logit(None, 'No pending tx') # noqa
+                                return True
+        else:
+            # Cancel Uncomplete request
+            ele_btn = self.page.ele('@@tag()=button@@data-testid=okd-button@@text():Cancel', timeout=2) # noqa
+            if not isinstance(ele_btn, NoneElement):
+                ele_btn.click(by_js=True)
+                self.page.wait(1)
+                self.logit(None, 'Uncomplete request. Cancel')
+
+        return True
+
     def spindle_run(self):
+        if self.init_okx() is False:
+            self.logit(None, 'Fail to init okx')
+        self.is_tx_pending()
 
         n_raffle = random.randint(1, 5)
-        # n_raffle = 2
+        # n_raffle = 1
         self.logit('spindle_run', f'n_raffle={n_raffle}')
 
         if n_raffle == 1:
@@ -973,7 +1070,6 @@ class SpindleTask():
             sys.exit(1)
 
         return True
-
 
 
 def send_msg(instSpindleTask, lst_success):
