@@ -313,7 +313,36 @@ class SpindleTask():
                 return True
         return False
 
-    def init_okx(self):
+    def okx_bulk_import_private_key(self, s_key):
+        ele_btn = self.page.ele('@@tag()=div@@class:_typography@@text():Bulk import private key', timeout=2) # noqa
+        if not isinstance(ele_btn, NoneElement):
+            ele_btn.click(by_js=True)
+            self.logit('okx_bulk_import_private_key', 'Click ...')
+
+            self.page = self.page.get_tab(self.page.latest_tab.tab_id)
+
+            ele_btn = self.page.ele('@@tag()=i@@id=okdDialogCloseBtn', timeout=2) # noqa
+            if not isinstance(ele_btn, NoneElement):
+                self.logit(None, 'Close pwd input box ...')
+                ele_btn.click(by_js=True)
+
+            ele_btn = self.page.ele('@@tag()=div@@data-testid=okd-select-reference-value-box', timeout=2) # noqa
+            if not isinstance(ele_btn, NoneElement):
+                self.logit(None, 'Select network ...')
+                ele_btn.click(by_js=True)
+
+            ele_btn = self.page.ele('@@tag()=div@@class:_typography@@text()=EVM networks', timeout=2) # noqa
+            if not isinstance(ele_btn, NoneElement):
+                self.logit(None, 'Click EVM networks ...')
+                ele_btn.click(by_js=True)
+
+            ele_input = self.page.ele('@@tag()=textarea@@id:pk-input@@placeholder:private', timeout=2) # noqa
+            if not isinstance(ele_input, NoneElement):
+                self.logit(None, 'Click EVM networks ...')
+                self.page.actions.move_to(ele_input).click().type(s_key) # noqa
+                self.page.wait(5)
+
+    def init_okx(self, is_bulk=False):
         """
         chrome-extension://jiofmdifioeejeilfkpegipdjiopiekl/popup/index.html
         """
@@ -363,8 +392,11 @@ class SpindleTask():
                         if not isinstance(ele_input, NoneElement):
                             # 使用动作，输入完 Confirm 按钮才会变成可点击状态
                             self.page.actions.move_to(ele_input).click().type(s_key) # noqa
-                            self.page.wait(1)
+                            self.page.wait(5)
                             self.logit('init_okx', 'Input Private key')
+                    is_bulk = True
+                    if is_bulk:
+                        self.okx_bulk_import_private_key(s_key)
                 else:
                     # Seed phrase
                     self.logit('init_okx', 'Import By Seed phrase')
@@ -430,6 +462,7 @@ class SpindleTask():
                     ele_btn.click(by_js=True)
                     self.logit('init_okx', 'import wallet success')
                     self.save_screenshot(name='okx_3.jpg')
+                    self.page.wait(2)
 
                 if is_success:
                     return True
@@ -437,9 +470,15 @@ class SpindleTask():
             ele_info = self.page.ele('Your portal to Web3', timeout=2)
             if not isinstance(ele_info, NoneElement):
                 self.logit('init_okx', 'Input password to unlock ...')
-                ele_input = self.page.ele('@@tag()=input@@data-testid=okd-input@@placeholder:Enter', timeout=2) # noqa
+                s_path = '@@tag()=input@@data-testid=okd-input@@placeholder:Enter' # noqa
+                ele_input = self.page.ele(s_path, timeout=2) # noqa
                 if not isinstance(ele_input, NoneElement):
                     self.page.actions.move_to(ele_input).click().type(DEF_PWD)
+                    if ele_input.value != DEF_PWD:
+                        self.logit('init_okx', '[ERROR] Fail to input passwrod !') # noqa
+                        self.page.set.window.max()
+                        return False
+
                     self.page.wait(1)
                     ele_btn = self.page.ele('@@tag()=button@@data-testid=okd-button@@text():Unlock', timeout=2) # noqa
                     if not isinstance(ele_btn, NoneElement):
@@ -451,7 +490,18 @@ class SpindleTask():
 
                         return True
             else:
-                self.logit('init_okx', 'What is this ...')
+                ele_btn = self.page.ele('@@tag()=button@@data-testid=okd-button@@text()=Approve', timeout=2) # noqa
+                if not isinstance(ele_btn, NoneElement):
+                    ele_btn.click(by_js=True)
+                    self.page.wait(1)
+                else:
+                    ele_btn = self.page.ele('@@tag()=button@@data-testid=okd-button@@text()=Connect', timeout=2) # noqa
+                    if not isinstance(ele_btn, NoneElement):
+                        ele_btn.click(by_js=True)
+                        self.page.wait(1)
+                    else:
+                        self.logit('init_okx', '[ERROR] What is this ... [quit]') # noqa
+                        self.page.quit()
 
         self.logit('init_okx', 'login failed [ERROR]')
         return False
