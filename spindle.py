@@ -1018,7 +1018,7 @@ class SpindleTask():
                             n_pending = self.get_pending_num(s_info)
                             if n_pending > 0:
                                 n_sleep = 2
-                                self.logit(None, f'[WARNING] tx is Pending: {s_info} Sleep {n_sleep} seconds') # noqa
+                                self.logit(None, f'⚠️ [WARNING] tx is Pending: {s_info} Sleep {n_sleep} seconds') # noqa
                                 self.page.wait(n_sleep)
 
                                 ele_btn = self.page.ele('@@tag()=i@@class:icon iconfont okx-wallet-plugin-brush@@role=button', timeout=2) # noqa
@@ -1032,7 +1032,7 @@ class SpindleTask():
                                         self.logit(None, 'Clear pending tx Confirmed [OK]')
                                         return True
                             else:
-                                self.logit(None, 'No pending tx') # noqa
+                                self.logit(None, '✅ No pending tx') # noqa
                                 return True
         else:
             # Cancel Uncomplete request
