@@ -131,7 +131,10 @@ class SpindleTask():
             pass
         else:
             if self.page:
-                self.page.quit()
+                try:
+                    self.page.quit()
+                except Exception as e:
+                    logger.info(f'[Close] Error: {e}')
 
     def initChrome(self, s_profile):
         """
